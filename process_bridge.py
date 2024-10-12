@@ -1,6 +1,5 @@
 import sys
 import os
-import threading
 import subprocess
 
 # ------------------------------------------------------------------------------
@@ -13,12 +12,6 @@ class OsPipe(int):
 
 # ------------------------------------------------------------------------------
 
-def run(command: str, stdin: OsPipe, stdout: OsPipe, stderr: OsPipe) -> None:
-    subprocess.run(
-        args=command,
-        stdin=stdin, stdout=stdout, stderr=stderr,
-        shell=True, text=True)
-
 def generic_receive(pipe: OsPipe) -> str:
     buffer = os.read(pipe, 1).decode()
     while ('\n' != buffer[-1]):
@@ -30,9 +23,6 @@ def generic_receive(pipe: OsPipe) -> str:
 class ParentProcess:
 
     def __init__(self) -> None:
-        # sys.stdin = os.fdopen(sys.stdin.fileno(), 'r', buffering=0)
-        # sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=0)
-        # sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', buffering=0)
         pass
     
     def send(self, message: str) -> None:
@@ -50,12 +40,13 @@ class ParentProcess:
 
 class ChildProcess:
 
-    thread_handle = None
+    handle = None
     stdin = None
     stdout = None
     stderr = None
 
     def __init__(self, command: str) -> None:
+        
         (stdin_r, stdin_w) = os.pipe()
         os.set_inheritable(stdin_r, True)
         self.stdin = stdin_w
@@ -67,22 +58,26 @@ class ChildProcess:
         (stderr_r, stderr_w) = os.pipe()
         self.stderr = stderr_r
         os.set_inheritable(stderr_w, True)
-        
-        self.thread_handle = threading.Thread(
-            target=run,
-            args=[command, stdin_r, stdout_w, stderr_w],
-            daemon=True
-            )
-        self.thread_handle.start()
 
+        self.handle = subprocess.Popen(
+            args=command,
+            stdin= stdin_r,
+            stdout=stdout_w,
+            stderr=stderr_w,
+            shell=True
+        )
+        
     def despawn(self) -> ReturnCode:
-        raise Exception('This method is not implemented.')
+        self.handle.terminate()
+        self.handle.wait()
+        return self.handle.returncode
 
     def wait(self) -> ReturnCode:
-        raise Exception('This method is not implemented.')
+        self.handle.wait()
+        return self.handle.returncode
 
     def send(self, message: str) -> None:
-        os.write(self.stdin, f"{message}\n".encode())
+        os.write(self.stdin, f"{message}{os.linesep}".encode())
 
     def receive(self) -> str :
         return generic_receive(self.stdout)
