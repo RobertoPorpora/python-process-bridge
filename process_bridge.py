@@ -1,10 +1,29 @@
 import sys
 import os
+import threading
+import subprocess
 
 # ------------------------------------------------------------------------------
 
 class ReturnCode(int):
     pass
+
+class OsPipe(int):
+    pass
+
+# ------------------------------------------------------------------------------
+
+def run(command: str, stdin: OsPipe, stdout: OsPipe, stderr: OsPipe) -> None:
+    subprocess.run(
+        args=command,
+        stdin=stdin, stdout=stdout, stderr=stderr,
+        shell=True, text=True)
+
+def generic_receive(pipe: OsPipe) -> str:
+    buffer = os.read(pipe, 1).decode()
+    while ('\n' != buffer[-1]):
+        buffer += os.read(pipe, 1).decode()
+    return buffer.strip()
 
 # ------------------------------------------------------------------------------
 
@@ -31,8 +50,30 @@ class ParentProcess:
 
 class ChildProcess:
 
-    def __init__(command: str) -> None:
-        raise Exception('This method is not implemented.')
+    thread_handle = None
+    stdin = None
+    stdout = None
+    stderr = None
+
+    def __init__(self, command: str) -> None:
+        (stdin_r, stdin_w) = os.pipe()
+        os.set_inheritable(stdin_r, True)
+        self.stdin = stdin_w
+
+        (stdout_r, stdout_w) = os.pipe()
+        self.stdout = stdout_r
+        os.set_inheritable(stdout_w, True)
+        
+        (stderr_r, stderr_w) = os.pipe()
+        self.stderr = stderr_r
+        os.set_inheritable(stderr_w, True)
+        
+        self.thread_handle = threading.Thread(
+            target=run,
+            args=[command, stdin_r, stdout_w, stderr_w],
+            daemon=True
+            )
+        self.thread_handle.start()
 
     def despawn(self) -> ReturnCode:
         raise Exception('This method is not implemented.')
@@ -41,12 +82,12 @@ class ChildProcess:
         raise Exception('This method is not implemented.')
 
     def send(self, message: str) -> None:
-        raise Exception('This method is not implemented.')
+        os.write(self.stdin, f"{message}\n".encode())
 
     def receive(self) -> str :
-        raise Exception('This method is not implemented.')
+        return generic_receive(self.stdout)
 
     def receive_err(self) -> str :
-        raise Exception('This method is not implemented.')
+        return generic_receive(self.stderr)
 
 # ------------------------------------------------------------------------------
