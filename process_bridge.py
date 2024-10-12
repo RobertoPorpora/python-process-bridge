@@ -12,14 +12,6 @@ class OsPipe(int):
 
 # ------------------------------------------------------------------------------
 
-def generic_receive(pipe: OsPipe) -> str:
-    buffer = os.read(pipe, 1).decode()
-    while ('\n' != buffer[-1]):
-        buffer += os.read(pipe, 1).decode()
-    return buffer.strip()
-
-# ------------------------------------------------------------------------------
-
 class ParentProcess:
 
     def __init__(self) -> None:
@@ -40,10 +32,11 @@ class ParentProcess:
 
 class ChildProcess:
 
-    handle = None
-    stdin = None
-    stdout = None
-    stderr = None
+    handle: subprocess.Popen = None
+    stdin: OsPipe = None
+    stdout: OsPipe = None
+    stderr: OsPipe = None
+    buffer: str = ""
 
     def __init__(self, command: str) -> None:
         
@@ -80,9 +73,19 @@ class ChildProcess:
         os.write(self.stdin, f"{message}{os.linesep}".encode())
 
     def receive(self) -> str :
-        return generic_receive(self.stdout)
+        return self.generic_receive(self.stdout)
 
     def receive_err(self) -> str :
-        return generic_receive(self.stderr)
+        return self.generic_receive(self.stderr)
+    
+    def generic_receive(self, pipe: OsPipe) -> str:
 
+        while not os.linesep in self.buffer:
+            self.buffer += os.read(pipe, 1024).decode()
+        
+        position = self.buffer.find(os.linesep)        
+        output = self.buffer[:position]        
+        self.buffer = self.buffer[position + len(os.linesep):]
+        return output
+        
 # ------------------------------------------------------------------------------
